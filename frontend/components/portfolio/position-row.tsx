@@ -32,6 +32,10 @@ export interface EnrichedPosition {
   totalReturnPercent: number
   dayChange: number
   dayChangePercent: number
+  totalValueUSD: number
+  totalInvestedUSD: number
+  dayChangeUSD: number
+  realizedPnlUSD: number
 }
 
 interface PositionRowProps {
@@ -44,7 +48,6 @@ interface PositionRowProps {
 function PositionRow({ position, expanded, onToggle, onTransactionChange }: PositionRowProps) {
   const [showAdd, setShowAdd] = useState(false)
   const flash = usePriceFlash(position.currentPrice)
-  const isTotalPositive = position.totalReturn >= 0
   const isDayPositive = position.dayChange >= 0
   const isTRY = position.currency === "TRY"
   const fmtPrice = (v: number) => isTRY ? `₺${formatTRY(v)}` : formatCurrency(v)
@@ -53,8 +56,7 @@ function PositionRow({ position, expanded, onToggle, onTransactionChange }: Posi
 
   return (
     <div>
-      <div className="relative">
-        <AssetRow
+      <AssetRow
           variant="card"
           ticker={isCurrency ? position.name : position.ticker}
           title={isCurrency ? position.name : position.ticker}
@@ -104,8 +106,7 @@ function PositionRow({ position, expanded, onToggle, onTransactionChange }: Posi
               </Button>
             </div>
           }
-        />
-      </div>
+      />
 
       {expanded && (
         <div className="ml-4 mt-1 border-l-2 border-border pl-4 pb-2">

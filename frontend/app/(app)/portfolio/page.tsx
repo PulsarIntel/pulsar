@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback, useMemo } from "react"
 import {
   IconChartPie,
   IconPlus,
-  IconLoader2,
 } from "@tabler/icons-react"
 
 import { Header } from "@/components/shared/header"
@@ -168,7 +167,7 @@ export default function PortfolioPage() {
     )
   }
 
-  const enrichedPositions: EnrichedPosition[] = positions.map((p) => {
+  const enrichedPositions = useMemo(() => positions.map((p): EnrichedPosition => {
     const q = quotes?.[p.ticker] || quotes?.[p.ticker.toLowerCase()] || quotes?.[p.ticker.toUpperCase()]
     const currentPrice = q?.price ?? 0
     const isTRY = p.currency === "TRY"
@@ -192,13 +191,13 @@ export default function PortfolioPage() {
       dayChangeUSD: dayChange * toUSD,
       realizedPnlUSD: p.realized_pnl * toUSD,
     }
-  })
+  }), [positions, quotes, usdTryRate])
 
-  const totalValue = enrichedPositions.reduce((s, p) => s + (p as any).totalValueUSD, 0)
-  const totalCost = enrichedPositions.reduce((s, p) => s + (p as any).totalInvestedUSD, 0)
-  const dayChange = enrichedPositions.reduce((s, p) => s + (p as any).dayChangeUSD, 0)
+  const totalValue = enrichedPositions.reduce((s, p) => s + p.totalValueUSD, 0)
+  const totalCost = enrichedPositions.reduce((s, p) => s + p.totalInvestedUSD, 0)
+  const dayChange = enrichedPositions.reduce((s, p) => s + p.dayChangeUSD, 0)
   const totalReturn = totalValue - totalCost
-  const realizedPnl = enrichedPositions.reduce((s, p) => s + (p as any).realizedPnlUSD, 0)
+  const realizedPnl = enrichedPositions.reduce((s, p) => s + p.realizedPnlUSD, 0)
 
   const portfolio: Portfolio = {
     totalValue,

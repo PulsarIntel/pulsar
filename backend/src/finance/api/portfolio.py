@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 from bson import ObjectId
 from fastapi import APIRouter, Depends, Header as FastAPIHeader, HTTPException
+from pymongo import ReturnDocument
 
 from finance.api.deps import _get_user_id
 from finance.api.ratelimit import user_limiter
@@ -69,9 +70,7 @@ def _recalculate_position(transactions: list[dict]) -> dict:
 
 
 async def _sync_position(db, user_id: str, ticker: str, currency: str) -> None:
-    txns: list[dict] = []
-    async for t in db.transactions.find({"user_id": user_id, "ticker": ticker}):
-        txns.append(t)
+    txns = await db.transactions.find({"user_id": user_id, "ticker": ticker}).to_list(None)
 
     if not txns:
         await db.positions.delete_one({"user_id": user_id, "ticker": ticker})
@@ -123,20 +122,18 @@ async def list_holdings(
 ) -> list[HoldingOut]:
     user_id = _get_user_id(authorization)
     db = get_db()
-    cursor = db.holdings.find({"user_id": user_id}).sort("created_at", -1)
-    holdings = []
-    async for doc in cursor:
-        holdings.append(
-            HoldingOut(
-                id=str(doc["_id"]),
-                ticker=doc["ticker"],
-                shares=doc["shares"],
-                avg_cost=doc["avg_cost"],
-                bought_at=doc["bought_at"],
-                currency=doc.get("currency", "USD"),
-            )
+    docs = await db.holdings.find({"user_id": user_id}).sort("created_at", -1).to_list(None)
+    return [
+        HoldingOut(
+            id=str(doc["_id"]),
+            ticker=doc["ticker"],
+            shares=doc["shares"],
+            avg_cost=doc["avg_cost"],
+            bought_at=doc["bought_at"],
+            currency=doc.get("currency", "USD"),
         )
-    return holdings
+        for doc in docs
+    ]
 
 
 @router.post("/holdings", status_code=201)
@@ -197,23 +194,21 @@ async def list_positions(
 ) -> list[PositionOut]:
     user_id = _get_user_id(authorization)
     db = get_db()
-    cursor = db.positions.find({"user_id": user_id}).sort("updated_at", -1)
-    positions: list[PositionOut] = []
-    async for doc in cursor:
-        positions.append(
-            PositionOut(
-                id=str(doc["_id"]),
-                ticker=doc["ticker"],
-                currency=doc.get("currency", "USD"),
-                total_shares=doc["total_shares"],
-                avg_cost=doc["avg_cost"],
-                total_invested=doc["total_invested"],
-                realized_pnl=doc.get("realized_pnl", 0.0),
-                first_transaction_date=doc.get("first_transaction_date", ""),
-                transaction_count=doc.get("transaction_count", 0),
-            )
+    docs = await db.positions.find({"user_id": user_id}).sort("updated_at", -1).to_list(None)
+    return [
+        PositionOut(
+            id=str(doc["_id"]),
+            ticker=doc["ticker"],
+            currency=doc.get("currency", "USD"),
+            total_shares=doc["total_shares"],
+            avg_cost=doc["avg_cost"],
+            total_invested=doc["total_invested"],
+            realized_pnl=doc.get("realized_pnl", 0.0),
+            first_transaction_date=doc.get("first_transaction_date", ""),
+            transaction_count=doc.get("transaction_count", 0),
         )
-    return positions
+        for doc in docs
+    ]
 
 
 @router.get("/positions/{ticker:path}/transactions")
@@ -223,13 +218,10 @@ async def list_transactions(
 ) -> list[TransactionOut]:
     user_id = _get_user_id(authorization)
     db = get_db()
-    cursor = db.transactions.find(
+    docs = await db.transactions.find(
         {"user_id": user_id, "ticker": ticker}
-    ).sort("date", -1)
-    result: list[TransactionOut] = []
-    async for doc in cursor:
-        result.append(_txn_doc_to_out(doc))
-    return result
+    ).sort("date", -1).to_list(None)
+    return [_txn_doc_to_out(doc) for doc in docs]
 
 
 @router.post("/transactions", status_code=201)
@@ -289,11 +281,12 @@ async def update_transaction(
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
     if updates:
         updates["updated_at"] = datetime.now(timezone.utc)
-        await db.transactions.update_one(
-            {"_id": ObjectId(txn_id)}, {"$set": updates}
-        )
 
-    updated = await db.transactions.find_one({"_id": ObjectId(txn_id)})
+    updated = await db.transactions.find_one_and_update(
+        {"_id": ObjectId(txn_id)},
+        {"$set": updates} if updates else {"$set": {}},
+        return_document=ReturnDocument.AFTER,
+    )
     await _sync_position(
         db, user_id, existing["ticker"], existing.get("currency", "USD")
     )
