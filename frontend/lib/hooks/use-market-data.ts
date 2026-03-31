@@ -135,7 +135,7 @@ export function useSymbolQuotes(symbols: string[]) {
   const rt = useMarketStore((s) => s.realtimeQuotes)
   const lastRef = useRef<Record<string, Quote> | null>(null)
 
-  const key = symbols.join(",")
+  const key = [...symbols].sort().join(",")
 
   useEffect(() => {
     if (symbols.length === 0) return

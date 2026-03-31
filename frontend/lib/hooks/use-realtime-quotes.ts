@@ -12,7 +12,7 @@ export function useRealtimeQuotes(symbols: string[]) {
   const subscribe = useMarketStore((s) => s.subscribeSymbols)
   const unsubscribe = useMarketStore((s) => s.unsubscribeSymbols)
 
-  const key = symbols.join(",")
+  const key = [...symbols].sort().join(",")
 
   useEffect(() => {
     if (symbols.length === 0) return

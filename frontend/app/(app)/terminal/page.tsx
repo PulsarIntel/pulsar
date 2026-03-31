@@ -94,7 +94,7 @@ export default function TerminalPage() {
       if (w.ticker && w.type !== "heatmap") syms.add(w.ticker)
     })
     if (polledQuotes) Object.keys(polledQuotes).forEach((s) => syms.add(s))
-    return Array.from(syms)
+    return Array.from(syms).sort()
   }, [allWidgets, polledQuotes])
   const { updates: rt, connected: wsConnected } = useRealtimeQuotes(allTickers)
 

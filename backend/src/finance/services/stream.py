@@ -24,10 +24,15 @@ _redis_reconnecting: bool = False
 
 REDIS_COOLDOWN_SECS = 10
 THROTTLE_INTERVAL = 0.3
+SUB_DEBOUNCE_SECS = 2.0
 
 _pending_trades: dict[str, dict] = {}
 _pending_quotes: dict[str, dict] = {}
 _flush_task: Optional[asyncio.Task] = None
+
+_sub_queue: set[str] = set()
+_unsub_queue: set[str] = set()
+_sub_debounce_handle: Optional[asyncio.TimerHandle] = None
 
 def _get_feed() -> DataFeed:
     return DataFeed.SIP if settings.ALPACA_FEED == "sip" else DataFeed.IEX
@@ -201,18 +206,63 @@ async def stop() -> None:
     _thread = None
     logger.info("Alpaca stream stopped")
 
+def _is_valid_symbol(s: str) -> bool:
+    return bool(s) and s.isalpha() and len(s) <= 5
+
+def _apply_sub_changes() -> None:
+    global _sub_debounce_handle
+    _sub_debounce_handle = None
+
+    to_unsub = list(_unsub_queue)
+    to_sub = list(_sub_queue)
+    _unsub_queue.clear()
+    _sub_queue.clear()
+
+    if not _stream or not _thread or not _thread.is_alive():
+        return
+
+    if to_unsub:
+        try:
+            _stream.unsubscribe_trades(*to_unsub)
+            _stream.unsubscribe_quotes(*to_unsub)
+            _stream.unsubscribe_bars(*to_unsub)
+        except Exception:
+            logger.exception("Stream: batch unsubscribe failed")
+        logger.info("Stream: batch unsubscribed %d symbols", len(to_unsub))
+
+    if to_sub:
+        try:
+            _stream.subscribe_trades(_on_trade, *to_sub)
+            _stream.subscribe_quotes(_on_quote, *to_sub)
+            _stream.subscribe_bars(_on_bar, *to_sub)
+        except Exception:
+            logger.exception("Stream: batch subscribe failed")
+        logger.info("Stream: batch subscribed %d symbols", len(to_sub))
+
+def _schedule_sub_flush() -> None:
+    global _sub_debounce_handle
+    if _main_loop is None or _main_loop.is_closed():
+        return
+    if _sub_debounce_handle is not None:
+        _sub_debounce_handle.cancel()
+    _sub_debounce_handle = _main_loop.call_later(SUB_DEBOUNCE_SECS, _apply_sub_changes)
+
 def subscribe(symbols: list[str]) -> None:
     if not _stream or not _thread or not _thread.is_alive():
         return
-    _stream.subscribe_trades(_on_trade, *symbols)
-    _stream.subscribe_quotes(_on_quote, *symbols)
-    _stream.subscribe_bars(_on_bar, *symbols)
-    logger.info("Stream: subscribed to %s", symbols)
+    valid = {s.upper() for s in symbols if _is_valid_symbol(s)}
+    if not valid:
+        return
+    _sub_queue.update(valid)
+    _unsub_queue.difference_update(valid)
+    _schedule_sub_flush()
 
 def unsubscribe(symbols: list[str]) -> None:
     if not _stream or not _thread or not _thread.is_alive():
         return
-    _stream.unsubscribe_trades(*symbols)
-    _stream.unsubscribe_quotes(*symbols)
-    _stream.unsubscribe_bars(*symbols)
-    logger.info("Stream: unsubscribed from %s", symbols)
+    valid = {s.upper() for s in symbols if _is_valid_symbol(s)}
+    if not valid:
+        return
+    _unsub_queue.update(valid)
+    _sub_queue.difference_update(valid)
+    _schedule_sub_flush()
