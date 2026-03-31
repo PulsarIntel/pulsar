@@ -69,6 +69,8 @@ export interface PortfolioPosition {
   totalReturnPercent: number
   dayChange: number
   dayChangePercent: number
+  realizedPnl: number
+  transactionCount: number
   sector: string
   sparkline: number[]
 }
@@ -80,7 +82,34 @@ export interface Portfolio {
   dayChangePercent: number
   totalReturn: number
   totalReturnPercent: number
+  realizedPnl: number
   positions: PortfolioPosition[]
+}
+
+export interface Transaction {
+  id: string
+  ticker: string
+  type: "buy" | "sell"
+  shares: number
+  price_per_share: number
+  total_cost: number
+  date: string
+  currency: string
+  fee: number
+  notes: string
+  created_at: string
+}
+
+export interface Position {
+  id: string
+  ticker: string
+  currency: string
+  total_shares: number
+  avg_cost: number
+  total_invested: number
+  realized_pnl: number
+  first_transaction_date: string
+  transaction_count: number
 }
 
 export interface WatchlistItem {

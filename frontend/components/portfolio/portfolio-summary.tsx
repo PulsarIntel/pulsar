@@ -1,5 +1,5 @@
 import type { Portfolio } from "@/lib/types"
-import { formatCurrency, formatPercent, formatChange } from "@/lib/format"
+import { formatCurrency, formatPercent } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
 interface PortfolioSummaryProps {
@@ -9,9 +9,10 @@ interface PortfolioSummaryProps {
 function PortfolioSummary({ portfolio }: PortfolioSummaryProps) {
   const isDayPositive = portfolio.dayChange >= 0
   const isTotalPositive = portfolio.totalReturn >= 0
+  const isRealizedPositive = portfolio.realizedPnl >= 0
 
   return (
-    <div data-slot="portfolio-summary" className="grid gap-3 sm:grid-cols-3">
+    <div data-slot="portfolio-summary" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
       <div className="rounded-xl border border-border bg-card p-4">
         <div className="text-xs text-muted-foreground">Total Value</div>
         <div className="mt-1 font-mono text-2xl font-bold tabular-nums tracking-tight">
@@ -59,6 +60,21 @@ function PortfolioSummary({ portfolio }: PortfolioSummaryProps) {
           )}
         >
           {formatPercent(portfolio.totalReturnPercent)}
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-border bg-card p-4">
+        <div className="text-xs text-muted-foreground">Realized P&L</div>
+        <div
+          className={cn(
+            "mt-1 font-mono text-2xl font-bold tabular-nums tracking-tight",
+            isRealizedPositive ? "text-positive" : "text-negative"
+          )}
+        >
+          {isRealizedPositive ? "+" : ""}{formatCurrency(portfolio.realizedPnl)}
+        </div>
+        <div className="mt-1 text-xs text-muted-foreground">
+          From closed trades
         </div>
       </div>
     </div>

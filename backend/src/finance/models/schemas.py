@@ -1,5 +1,5 @@
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, EmailStr
 
@@ -41,6 +41,48 @@ class HoldingOut(BaseModel):
     avg_cost: float
     bought_at: str
     currency: str = "USD"
+
+class TransactionIn(BaseModel):
+    ticker: str
+    type: Literal["buy", "sell"]
+    shares: float
+    price_per_share: float
+    date: str
+    currency: str = "USD"
+    fee: float = 0.0
+    notes: str = ""
+
+class TransactionUpdate(BaseModel):
+    type: Literal["buy", "sell"] | None = None
+    shares: float | None = None
+    price_per_share: float | None = None
+    date: str | None = None
+    fee: float | None = None
+    notes: str | None = None
+
+class TransactionOut(BaseModel):
+    id: str
+    ticker: str
+    type: Literal["buy", "sell"]
+    shares: float
+    price_per_share: float
+    total_cost: float
+    date: str
+    currency: str
+    fee: float
+    notes: str
+    created_at: str
+
+class PositionOut(BaseModel):
+    id: str
+    ticker: str
+    currency: str
+    total_shares: float
+    avg_cost: float
+    total_invested: float
+    realized_pnl: float
+    first_transaction_date: str
+    transaction_count: int
 
 class WidgetSchema(BaseModel):
     id: str
