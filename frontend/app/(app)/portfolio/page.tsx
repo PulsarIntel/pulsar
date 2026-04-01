@@ -102,6 +102,32 @@ export default function PortfolioPage() {
     }
   }, [])
 
+  const enrichedPositions = useMemo(() => positions.map((p): EnrichedPosition => {
+    const q = quotes?.[p.ticker] || quotes?.[p.ticker.toLowerCase()] || quotes?.[p.ticker.toUpperCase()]
+    const currentPrice = q?.price ?? 0
+    const isTRY = p.currency === "TRY"
+    const totalValue = currentPrice * p.total_shares
+    const totalReturn = totalValue - p.total_invested
+    const totalReturnPercent = p.total_invested > 0 ? (totalReturn / p.total_invested) * 100 : 0
+    const dayChange = (q?.change ?? 0) * p.total_shares
+    const dayChangePercent = q?.changePercent ?? 0
+    const toUSD = isTRY && usdTryRate > 0 ? 1 / usdTryRate : 1
+    return {
+      ...p,
+      name: q?.name ?? p.ticker,
+      currentPrice,
+      totalValue,
+      totalReturn,
+      totalReturnPercent,
+      dayChange,
+      dayChangePercent,
+      totalValueUSD: totalValue * toUSD,
+      totalInvestedUSD: p.total_invested * toUSD,
+      dayChangeUSD: dayChange * toUSD,
+      realizedPnlUSD: p.realized_pnl * toUSD,
+    }
+  }), [positions, quotes, usdTryRate])
+
   useEffect(() => {
     const loggedIn = !!localStorage.getItem("token")
     setIsLoggedIn(loggedIn)
@@ -166,32 +192,6 @@ export default function PortfolioPage() {
       </>
     )
   }
-
-  const enrichedPositions = useMemo(() => positions.map((p): EnrichedPosition => {
-    const q = quotes?.[p.ticker] || quotes?.[p.ticker.toLowerCase()] || quotes?.[p.ticker.toUpperCase()]
-    const currentPrice = q?.price ?? 0
-    const isTRY = p.currency === "TRY"
-    const totalValue = currentPrice * p.total_shares
-    const totalReturn = totalValue - p.total_invested
-    const totalReturnPercent = p.total_invested > 0 ? (totalReturn / p.total_invested) * 100 : 0
-    const dayChange = (q?.change ?? 0) * p.total_shares
-    const dayChangePercent = q?.changePercent ?? 0
-    const toUSD = isTRY && usdTryRate > 0 ? 1 / usdTryRate : 1
-    return {
-      ...p,
-      name: q?.name ?? p.ticker,
-      currentPrice,
-      totalValue,
-      totalReturn,
-      totalReturnPercent,
-      dayChange,
-      dayChangePercent,
-      totalValueUSD: totalValue * toUSD,
-      totalInvestedUSD: p.total_invested * toUSD,
-      dayChangeUSD: dayChange * toUSD,
-      realizedPnlUSD: p.realized_pnl * toUSD,
-    }
-  }), [positions, quotes, usdTryRate])
 
   const totalValue = enrichedPositions.reduce((s, p) => s + p.totalValueUSD, 0)
   const totalCost = enrichedPositions.reduce((s, p) => s + p.totalInvestedUSD, 0)
