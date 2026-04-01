@@ -7,19 +7,11 @@ import { useDovizStore } from "@/lib/stores/doviz-store"
 import { isDovizTicker, isCryptoTicker } from "@/lib/constants"
 import { useCryptoStore } from "@/lib/stores/crypto-store"
 import { usePriceFlash } from "@/lib/hooks/use-price-flash"
-import { formatCurrency, formatTRY, formatPercent, formatChange } from "@/lib/format"
+import { formatCurrency, formatTRY, formatPercent } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { TickerLogo } from "@/components/shared/ticker-logo"
-import { API_BASE } from "@/lib/constants"
-
-interface Holding {
-  id: string
-  ticker: string
-  shares: number
-  avg_cost: number
-  bought_at: string
-  currency: string
-}
+import { fetchPositions } from "@/lib/api/portfolio"
+import type { Position } from "@/lib/types"
 
 interface PositionData {
   id: string
@@ -58,24 +50,20 @@ const PortfolioRow = memo(function PortfolioRow({ p }: { p: PositionData }) {
 })
 
 function PortfolioWidget({ quotes }: { quotes: Record<string, Quote> | null }) {
-  const [holdings, setHoldings] = useState<Holding[]>([])
+  const [positionsList, setPositionsList] = useState<Position[]>([])
   const [loading, setLoading] = useState(true)
   const dovizQuotes = useDovizStore((s) => s.quotes)
   const cryptoQuotes = useCryptoStore((s) => s.quotes)
 
-  const fetchHoldings = useCallback(async () => {
-    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null
-    if (!token) { setLoading(false); return }
+  const loadPositions = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/portfolio/holdings`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (res.ok) setHoldings(await res.json())
+      const data = await fetchPositions()
+      setPositionsList(data)
     } catch {}
     finally { setLoading(false) }
   }, [])
 
-  useEffect(() => { fetchHoldings() }, [fetchHoldings])
+  useEffect(() => { loadPositions() }, [loadPositions])
 
   if (loading) {
     return (
@@ -89,7 +77,7 @@ function PortfolioWidget({ quotes }: { quotes: Record<string, Quote> | null }) {
     )
   }
 
-  if (holdings.length === 0) {
+  if (positionsList.length === 0) {
     return (
       <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
         No holdings yet
@@ -100,7 +88,7 @@ function PortfolioWidget({ quotes }: { quotes: Record<string, Quote> | null }) {
   const usdTryQuote = dovizQuotes["USD"] || dovizQuotes["usd"]
   const usdTryRate = usdTryQuote?.price || usdTryQuote?.ask || 0
 
-  const positions: PositionData[] = holdings.map((h) => {
+  const positions: PositionData[] = positionsList.map((h) => {
     const isCurrency = isDovizTicker(h.ticker)
     const isTRY = h.currency === "TRY" || isCurrency
 
@@ -132,15 +120,18 @@ function PortfolioWidget({ quotes }: { quotes: Record<string, Quote> | null }) {
       }
     }
 
-    const totalValue = price * h.shares
-    const totalCost = h.avg_cost * h.shares
+    const totalValue = price * h.total_shares
+    const totalCost = h.avg_cost * h.total_shares
     const totalReturn = totalValue - totalCost
     const totalReturnPct = totalCost > 0 ? (totalReturn / totalCost) * 100 : 0
     const toUSD = isTRY && usdTryRate > 0 ? 1 / usdTryRate : 1
 
     return {
-      ...h,
+      id: h.id,
+      ticker: h.ticker,
       name,
+      shares: h.total_shares,
+      avg_cost: h.avg_cost,
       price,
       totalValue,
       totalReturn,
