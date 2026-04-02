@@ -1,8 +1,9 @@
 "use client"
 
-import { useState, useEffect, useCallback, memo } from "react"
+import { useState, useEffect, useCallback, useMemo, memo } from "react"
 
 import type { Quote } from "@/lib/hooks/use-market-data"
+import { useSymbolQuotes } from "@/lib/hooks/use-market-data"
 import { useDovizStore } from "@/lib/stores/doviz-store"
 import { isDovizTicker, isCryptoTicker } from "@/lib/constants"
 import { useCryptoStore } from "@/lib/stores/crypto-store"
@@ -65,6 +66,14 @@ function PortfolioWidget({ quotes }: { quotes: Record<string, Quote> | null }) {
 
   useEffect(() => { loadPositions() }, [loadPositions])
 
+  const stockTickers = useMemo(
+    () => positionsList
+      .map((p) => p.ticker)
+      .filter((t) => !isDovizTicker(t) && !isCryptoTicker(t)),
+    [positionsList],
+  )
+  const { data: positionQuotes } = useSymbolQuotes(stockTickers)
+
   if (loading) {
     return (
       <div className="flex h-full flex-col gap-0.5 p-3">
@@ -112,7 +121,7 @@ function PortfolioWidget({ quotes }: { quotes: Record<string, Quote> | null }) {
         changePercent = c.changePercent
       }
     } else {
-      const q = quotes?.[h.ticker]
+      const q = quotes?.[h.ticker] || positionQuotes?.[h.ticker]
       if (q) {
         price = q.price
         name = q.name
