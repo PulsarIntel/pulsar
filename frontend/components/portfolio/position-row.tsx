@@ -43,9 +43,10 @@ interface PositionRowProps {
   expanded: boolean
   onToggle: () => void
   onTransactionChange: () => void
+  portfolioId?: string
 }
 
-function PositionRow({ position, expanded, onToggle, onTransactionChange }: PositionRowProps) {
+function PositionRow({ position, expanded, onToggle, onTransactionChange, portfolioId }: PositionRowProps) {
   const [showAdd, setShowAdd] = useState(false)
   const flash = usePriceFlash(position.currentPrice)
   const isDayPositive = position.dayChange >= 0
@@ -113,13 +114,14 @@ function PositionRow({ position, expanded, onToggle, onTransactionChange }: Posi
           <div className="mb-2 flex items-center justify-between">
             <span className="text-xs font-medium text-muted-foreground">Transaction History</span>
           </div>
-          <TransactionList ticker={position.ticker} onChanged={onTransactionChange} />
+          <TransactionList ticker={position.ticker} portfolioId={portfolioId} onChanged={onTransactionChange} />
         </div>
       )}
 
       {showAdd && (
         <AddTransactionDialog
           defaultTicker={position.ticker}
+          portfolioId={portfolioId}
           onClose={() => setShowAdd(false)}
           onAdded={() => { setShowAdd(false); onTransactionChange() }}
         />

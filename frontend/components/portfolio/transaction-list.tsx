@@ -10,10 +10,11 @@ import type { Transaction } from "@/lib/types"
 
 interface TransactionListProps {
   ticker: string
+  portfolioId?: string
   onChanged: () => void
 }
 
-function TransactionList({ ticker, onChanged }: TransactionListProps) {
+function TransactionList({ ticker, portfolioId, onChanged }: TransactionListProps) {
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(true)
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -21,13 +22,13 @@ function TransactionList({ ticker, onChanged }: TransactionListProps) {
 
   const load = useCallback(async () => {
     try {
-      const data = await fetchTransactions(ticker)
+      const data = await fetchTransactions(ticker, portfolioId)
       setTransactions(data)
     } catch {
     } finally {
       setLoading(false)
     }
-  }, [ticker])
+  }, [ticker, portfolioId])
 
   useEffect(() => { load() }, [load])
 

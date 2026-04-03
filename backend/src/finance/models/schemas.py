@@ -51,6 +51,7 @@ class TransactionIn(BaseModel):
     currency: str = "USD"
     fee: float = 0.0
     notes: str = ""
+    portfolio_id: str | None = None
 
 class TransactionUpdate(BaseModel):
     type: Literal["buy", "sell"] | None = None
@@ -62,6 +63,7 @@ class TransactionUpdate(BaseModel):
 
 class TransactionOut(BaseModel):
     id: str
+    portfolio_id: str
     ticker: str
     type: Literal["buy", "sell"]
     shares: float
@@ -75,6 +77,7 @@ class TransactionOut(BaseModel):
 
 class PositionOut(BaseModel):
     id: str
+    portfolio_id: str
     ticker: str
     currency: str
     total_shares: float
@@ -83,6 +86,18 @@ class PositionOut(BaseModel):
     realized_pnl: float
     first_transaction_date: str
     transaction_count: int
+
+class PortfolioCreate(BaseModel):
+    name: str
+
+class PortfolioUpdate(BaseModel):
+    name: str | None = None
+
+class PortfolioOut(BaseModel):
+    id: str
+    name: str
+    is_default: bool
+    created_at: str
 
 class WidgetSchema(BaseModel):
     id: str

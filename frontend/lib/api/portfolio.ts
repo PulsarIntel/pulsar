@@ -1,6 +1,6 @@
 import { API_BASE } from "@/lib/constants"
 import { getAuthHeaders } from "@/lib/auth"
-import type { Position, Transaction } from "@/lib/types"
+import type { Position, Transaction, PortfolioMeta } from "@/lib/types"
 
 function headers() {
   return {
@@ -9,18 +9,73 @@ function headers() {
   }
 }
 
-export async function fetchPositions(): Promise<Position[]> {
-  const res = await fetch(`${API_BASE}/portfolio/positions`, {
+// ---------------------------------------------------------------------------
+// Portfolio CRUD
+// ---------------------------------------------------------------------------
+
+export async function fetchPortfolios(): Promise<PortfolioMeta[]> {
+  const res = await fetch(`${API_BASE}/portfolio/portfolios`, {
+    headers: getAuthHeaders(),
+  })
+  if (!res.ok) throw new Error("Failed to fetch portfolios")
+  return res.json()
+}
+
+export async function createPortfolio(name: string): Promise<PortfolioMeta> {
+  const res = await fetch(`${API_BASE}/portfolio/portfolios`, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify({ name }),
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error(data.detail || "Failed to create portfolio")
+  }
+  return res.json()
+}
+
+export async function renamePortfolio(id: string, name: string): Promise<PortfolioMeta> {
+  const res = await fetch(`${API_BASE}/portfolio/portfolios/${id}`, {
+    method: "PUT",
+    headers: headers(),
+    body: JSON.stringify({ name }),
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error(data.detail || "Failed to rename portfolio")
+  }
+  return res.json()
+}
+
+export async function deletePortfolio(id: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/portfolio/portfolios/${id}`, {
+    method: "DELETE",
+    headers: getAuthHeaders(),
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error(data.detail || "Failed to delete portfolio")
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Positions & Transactions
+// ---------------------------------------------------------------------------
+
+export async function fetchPositions(portfolioId?: string): Promise<Position[]> {
+  const params = portfolioId ? `?portfolio_id=${portfolioId}` : ""
+  const res = await fetch(`${API_BASE}/portfolio/positions${params}`, {
     headers: getAuthHeaders(),
   })
   if (!res.ok) throw new Error("Failed to fetch positions")
   return res.json()
 }
 
-export async function fetchTransactions(ticker: string): Promise<Transaction[]> {
+export async function fetchTransactions(ticker: string, portfolioId?: string): Promise<Transaction[]> {
   const encoded = encodeURIComponent(ticker)
+  const params = portfolioId ? `?portfolio_id=${portfolioId}` : ""
   const res = await fetch(
-    `${API_BASE}/portfolio/positions/${encoded}/transactions`,
+    `${API_BASE}/portfolio/positions/${encoded}/transactions${params}`,
     { headers: getAuthHeaders() },
   )
   if (!res.ok) throw new Error("Failed to fetch transactions")
@@ -36,6 +91,7 @@ export interface TransactionInput {
   currency?: string
   fee?: number
   notes?: string
+  portfolio_id?: string
 }
 
 export async function addTransaction(body: TransactionInput): Promise<Transaction> {

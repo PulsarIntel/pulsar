@@ -7,6 +7,7 @@ import { useSymbolQuotes } from "@/lib/hooks/use-market-data"
 import { useDovizStore } from "@/lib/stores/doviz-store"
 import { isDovizTicker, isCryptoTicker } from "@/lib/constants"
 import { useCryptoStore } from "@/lib/stores/crypto-store"
+import { usePortfolioStore } from "@/lib/stores/portfolio-store"
 import { usePriceFlash } from "@/lib/hooks/use-price-flash"
 import { formatCurrency, formatTRY, formatPercent } from "@/lib/format"
 import { cn } from "@/lib/utils"
@@ -55,14 +56,19 @@ function PortfolioWidget({ quotes }: { quotes: Record<string, Quote> | null }) {
   const [loading, setLoading] = useState(true)
   const dovizQuotes = useDovizStore((s) => s.quotes)
   const cryptoQuotes = useCryptoStore((s) => s.quotes)
+  const activePortfolioId = usePortfolioStore((s) => s.activePortfolioId)
+  const activeName = usePortfolioStore((s) => {
+    const p = s.portfolios.find((x) => x.id === s.activePortfolioId)
+    return p?.name
+  })
 
   const loadPositions = useCallback(async () => {
     try {
-      const data = await fetchPositions()
+      const data = await fetchPositions(activePortfolioId ?? undefined)
       setPositionsList(data)
     } catch {}
     finally { setLoading(false) }
-  }, [])
+  }, [activePortfolioId])
 
   useEffect(() => { loadPositions() }, [loadPositions])
 
@@ -162,6 +168,9 @@ function PortfolioWidget({ quotes }: { quotes: Record<string, Quote> | null }) {
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <div className="border-b border-border px-3 py-2">
+        {activeName && (
+          <div className="truncate text-[10px] text-muted-foreground">{activeName}</div>
+        )}
         <div className="font-mono text-base font-bold tabular-nums">{formatCurrency(totalValue)}</div>
         <div className="flex gap-3 text-[10px]">
           <span className={cn("font-mono tabular-nums", dayChange >= 0 ? "text-positive" : "text-negative")}>

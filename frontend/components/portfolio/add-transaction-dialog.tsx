@@ -20,6 +20,7 @@ interface AddTransactionDialogProps {
   onAdded: () => void
   defaultTicker?: string
   defaultType?: "buy" | "sell"
+  portfolioId?: string
 }
 
 function AddTransactionDialog({
@@ -27,6 +28,7 @@ function AddTransactionDialog({
   onAdded,
   defaultTicker,
   defaultType,
+  portfolioId,
 }: AddTransactionDialogProps) {
   const [txnType, setTxnType] = useState<"buy" | "sell">(defaultType ?? "buy")
   const [ticker, setTicker] = useState(defaultTicker ?? "")
@@ -65,6 +67,7 @@ function AddTransactionDialog({
         currency: priceCurrency,
         fee: fee ? Number(fee) : 0,
         notes: notes || "",
+        portfolio_id: portfolioId,
       })
       onAdded()
       onClose()

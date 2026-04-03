@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from bson import ObjectId
-from fastapi import APIRouter, Depends, Header as FastAPIHeader, HTTPException
+from fastapi import APIRouter, Depends, Header as FastAPIHeader, HTTPException, Query
 from pymongo import ReturnDocument
 
 from finance.api.deps import _get_user_id
@@ -10,6 +10,9 @@ from finance.database.connections import get_db
 from finance.models.schemas import (
     HoldingIn,
     HoldingOut,
+    PortfolioCreate,
+    PortfolioOut,
+    PortfolioUpdate,
     PositionOut,
     TransactionIn,
     TransactionOut,
@@ -32,6 +35,43 @@ def _normalize_ticker(raw: str) -> str:
 
 def _is_doviz(ticker: str) -> bool:
     return ticker in DOVIZ_SYMBOLS or ticker.lower() in DOVIZ_SYMBOLS
+
+
+async def _resolve_portfolio_id(db, user_id: str, portfolio_id: str | None) -> str:
+    if portfolio_id:
+        p = await db.portfolios.find_one({"_id": ObjectId(portfolio_id), "user_id": user_id})
+        if not p:
+            raise HTTPException(404, "Portfolio not found")
+        return portfolio_id
+
+    default = await db.portfolios.find_one({"user_id": user_id, "is_default": True})
+    if not default:
+        default = await _create_default_portfolio(db, user_id)
+    pid = str(default["_id"])
+
+    await db.transactions.update_many(
+        {"user_id": user_id, "portfolio_id": {"$exists": False}},
+        {"$set": {"portfolio_id": pid}},
+    )
+    await db.positions.update_many(
+        {"user_id": user_id, "portfolio_id": {"$exists": False}},
+        {"$set": {"portfolio_id": pid}},
+    )
+    return pid
+
+
+async def _create_default_portfolio(db, user_id: str) -> dict:
+    now = datetime.now(timezone.utc)
+    doc = {
+        "user_id": user_id,
+        "name": "My Portfolio",
+        "is_default": True,
+        "created_at": now,
+        "updated_at": now,
+    }
+    result = await db.portfolios.insert_one(doc)
+    doc["_id"] = result.inserted_id
+    return doc
 
 
 def _recalculate_position(transactions: list[dict]) -> dict:
@@ -69,18 +109,22 @@ def _recalculate_position(transactions: list[dict]) -> dict:
     }
 
 
-async def _sync_position(db, user_id: str, ticker: str, currency: str) -> None:
-    txns = await db.transactions.find({"user_id": user_id, "ticker": ticker}).to_list(None)
+async def _sync_position(db, user_id: str, portfolio_id: str, ticker: str, currency: str) -> None:
+    txns = await db.transactions.find(
+        {"user_id": user_id, "portfolio_id": portfolio_id, "ticker": ticker}
+    ).to_list(None)
 
     if not txns:
-        await db.positions.delete_one({"user_id": user_id, "ticker": ticker})
+        await db.positions.delete_one(
+            {"user_id": user_id, "portfolio_id": portfolio_id, "ticker": ticker}
+        )
         return
 
     summary = _recalculate_position(txns)
     now = datetime.now(timezone.utc)
 
     await db.positions.update_one(
-        {"user_id": user_id, "ticker": ticker},
+        {"user_id": user_id, "portfolio_id": portfolio_id, "ticker": ticker},
         {
             "$set": {
                 **summary,
@@ -89,6 +133,7 @@ async def _sync_position(db, user_id: str, ticker: str, currency: str) -> None:
             },
             "$setOnInsert": {
                 "user_id": user_id,
+                "portfolio_id": portfolio_id,
                 "ticker": ticker,
                 "created_at": now,
             },
@@ -103,6 +148,7 @@ def _txn_doc_to_out(doc: dict) -> TransactionOut:
         created = created.isoformat()
     return TransactionOut(
         id=str(doc["_id"]),
+        portfolio_id=doc.get("portfolio_id", ""),
         ticker=doc["ticker"],
         type=doc["type"],
         shares=doc["shares"],
@@ -114,6 +160,113 @@ def _txn_doc_to_out(doc: dict) -> TransactionOut:
         notes=doc.get("notes", ""),
         created_at=str(created),
     )
+
+
+def _portfolio_doc_to_out(doc: dict) -> PortfolioOut:
+    created = doc.get("created_at", "")
+    if isinstance(created, datetime):
+        created = created.isoformat()
+    return PortfolioOut(
+        id=str(doc["_id"]),
+        name=doc["name"],
+        is_default=doc.get("is_default", False),
+        created_at=str(created),
+    )
+
+
+@router.get("/portfolios")
+async def list_portfolios(
+    authorization: str | None = FastAPIHeader(None),
+) -> list[PortfolioOut]:
+    user_id = _get_user_id(authorization)
+    db = get_db()
+    await _resolve_portfolio_id(db, user_id, None)
+    docs = await db.portfolios.find({"user_id": user_id}).sort("created_at", 1).to_list(None)
+    return [_portfolio_doc_to_out(doc) for doc in docs]
+
+
+@router.post("/portfolios", status_code=201)
+async def create_portfolio(
+    body: PortfolioCreate,
+    authorization: str | None = FastAPIHeader(None),
+) -> PortfolioOut:
+    user_id = _get_user_id(authorization)
+    db = get_db()
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(400, "Portfolio name cannot be empty")
+
+    existing = await db.portfolios.find_one({"user_id": user_id, "name": name})
+    if existing:
+        raise HTTPException(400, f"Portfolio '{name}' already exists")
+
+    await _resolve_portfolio_id(db, user_id, None)
+
+    now = datetime.now(timezone.utc)
+    doc = {
+        "user_id": user_id,
+        "name": name,
+        "is_default": False,
+        "created_at": now,
+        "updated_at": now,
+    }
+    result = await db.portfolios.insert_one(doc)
+    doc["_id"] = result.inserted_id
+    return _portfolio_doc_to_out(doc)
+
+
+@router.put("/portfolios/{portfolio_id}")
+async def rename_portfolio(
+    portfolio_id: str,
+    body: PortfolioUpdate,
+    authorization: str | None = FastAPIHeader(None),
+) -> PortfolioOut:
+    user_id = _get_user_id(authorization)
+    db = get_db()
+    p = await db.portfolios.find_one({"_id": ObjectId(portfolio_id), "user_id": user_id})
+    if not p:
+        raise HTTPException(404, "Portfolio not found")
+
+    updates: dict = {}
+    if body.name is not None:
+        name = body.name.strip()
+        if not name:
+            raise HTTPException(400, "Portfolio name cannot be empty")
+        conflict = await db.portfolios.find_one(
+            {"user_id": user_id, "name": name, "_id": {"$ne": ObjectId(portfolio_id)}}
+        )
+        if conflict:
+            raise HTTPException(400, f"Portfolio '{name}' already exists")
+        updates["name"] = name
+
+    if updates:
+        updates["updated_at"] = datetime.now(timezone.utc)
+        updated = await db.portfolios.find_one_and_update(
+            {"_id": ObjectId(portfolio_id)},
+            {"$set": updates},
+            return_document=ReturnDocument.AFTER,
+        )
+        return _portfolio_doc_to_out(updated)
+
+    return _portfolio_doc_to_out(p)
+
+
+@router.delete("/portfolios/{portfolio_id}", status_code=204)
+async def delete_portfolio(
+    portfolio_id: str,
+    authorization: str | None = FastAPIHeader(None),
+) -> None:
+    user_id = _get_user_id(authorization)
+    db = get_db()
+    p = await db.portfolios.find_one({"_id": ObjectId(portfolio_id), "user_id": user_id})
+    if not p:
+        raise HTTPException(404, "Portfolio not found")
+    if p.get("is_default"):
+        raise HTTPException(400, "Cannot delete the default portfolio")
+
+    await db.transactions.delete_many({"user_id": user_id, "portfolio_id": portfolio_id})
+    await db.positions.delete_many({"user_id": user_id, "portfolio_id": portfolio_id})
+    await db.portfolios.delete_one({"_id": ObjectId(portfolio_id)})
 
 
 @router.get("/holdings")
@@ -191,13 +344,18 @@ async def delete_holding(
 @router.get("/positions")
 async def list_positions(
     authorization: str | None = FastAPIHeader(None),
+    portfolio_id: str | None = Query(None),
 ) -> list[PositionOut]:
     user_id = _get_user_id(authorization)
     db = get_db()
-    docs = await db.positions.find({"user_id": user_id}).sort("updated_at", -1).to_list(None)
+    pid = await _resolve_portfolio_id(db, user_id, portfolio_id)
+    docs = await db.positions.find(
+        {"user_id": user_id, "portfolio_id": pid}
+    ).sort("updated_at", -1).to_list(None)
     return [
         PositionOut(
             id=str(doc["_id"]),
+            portfolio_id=doc.get("portfolio_id", ""),
             ticker=doc["ticker"],
             currency=doc.get("currency", "USD"),
             total_shares=doc["total_shares"],
@@ -215,11 +373,13 @@ async def list_positions(
 async def list_transactions(
     ticker: str,
     authorization: str | None = FastAPIHeader(None),
+    portfolio_id: str | None = Query(None),
 ) -> list[TransactionOut]:
     user_id = _get_user_id(authorization)
     db = get_db()
+    pid = await _resolve_portfolio_id(db, user_id, portfolio_id)
     docs = await db.transactions.find(
-        {"user_id": user_id, "ticker": ticker}
+        {"user_id": user_id, "portfolio_id": pid, "ticker": ticker}
     ).sort("date", -1).to_list(None)
     return [_txn_doc_to_out(doc) for doc in docs]
 
@@ -233,9 +393,12 @@ async def add_transaction(
     db = get_db()
     ticker = _normalize_ticker(body.ticker)
     is_doviz = _is_doviz(ticker)
+    pid = await _resolve_portfolio_id(db, user_id, body.portfolio_id)
 
     if body.type == "sell":
-        pos = await db.positions.find_one({"user_id": user_id, "ticker": ticker})
+        pos = await db.positions.find_one(
+            {"user_id": user_id, "portfolio_id": pid, "ticker": ticker}
+        )
         current_shares = pos["total_shares"] if pos else 0
         if body.shares > current_shares + 1e-8:
             raise HTTPException(
@@ -246,6 +409,7 @@ async def add_transaction(
     now = datetime.now(timezone.utc)
     doc = {
         "user_id": user_id,
+        "portfolio_id": pid,
         "ticker": ticker,
         "type": body.type,
         "shares": body.shares,
@@ -260,7 +424,7 @@ async def add_transaction(
     result = await db.transactions.insert_one(doc)
     doc["_id"] = result.inserted_id
 
-    await _sync_position(db, user_id, ticker, doc["currency"])
+    await _sync_position(db, user_id, pid, ticker, doc["currency"])
     return _txn_doc_to_out(doc)
 
 
@@ -287,8 +451,11 @@ async def update_transaction(
         {"$set": updates} if updates else {"$set": {}},
         return_document=ReturnDocument.AFTER,
     )
+    pid = existing.get("portfolio_id", "")
+    if not pid:
+        pid = await _resolve_portfolio_id(db, user_id, None)
     await _sync_position(
-        db, user_id, existing["ticker"], existing.get("currency", "USD")
+        db, user_id, pid, existing["ticker"], existing.get("currency", "USD")
     )
     return _txn_doc_to_out(updated)
 
@@ -306,8 +473,12 @@ async def delete_transaction(
     if not txn:
         raise HTTPException(404, "Transaction not found")
 
+    pid = txn.get("portfolio_id", "")
+    if not pid:
+        pid = await _resolve_portfolio_id(db, user_id, None)
+
     await db.transactions.delete_one({"_id": ObjectId(txn_id)})
-    await _sync_position(db, user_id, txn["ticker"], txn.get("currency", "USD"))
+    await _sync_position(db, user_id, pid, txn["ticker"], txn.get("currency", "USD"))
 
 
 @router.post("/migrate")
@@ -321,6 +492,8 @@ async def migrate_holdings(
     if existing_positions > 0:
         return {"migrated": 0, "message": "Already migrated"}
 
+    pid = await _resolve_portfolio_id(db, user_id, None)
+
     cursor = db.holdings.find({"user_id": user_id})
     count = 0
     now = datetime.now(timezone.utc)
@@ -328,6 +501,7 @@ async def migrate_holdings(
     async for h in cursor:
         txn_doc = {
             "user_id": user_id,
+            "portfolio_id": pid,
             "ticker": h["ticker"],
             "type": "buy",
             "shares": h["shares"],
@@ -341,7 +515,7 @@ async def migrate_holdings(
         }
         await db.transactions.insert_one(txn_doc)
         await _sync_position(
-            db, user_id, h["ticker"], h.get("currency", "USD")
+            db, user_id, pid, h["ticker"], h.get("currency", "USD")
         )
         count += 1
 

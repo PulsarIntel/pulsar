@@ -88,6 +88,7 @@ export interface Portfolio {
 
 export interface Transaction {
   id: string
+  portfolio_id: string
   ticker: string
   type: "buy" | "sell"
   shares: number
@@ -102,6 +103,7 @@ export interface Transaction {
 
 export interface Position {
   id: string
+  portfolio_id: string
   ticker: string
   currency: string
   total_shares: number
@@ -110,6 +112,13 @@ export interface Position {
   realized_pnl: number
   first_transaction_date: string
   transaction_count: number
+}
+
+export interface PortfolioMeta {
+  id: string
+  name: string
+  is_default: boolean
+  created_at: string
 }
 
 export interface WatchlistItem {

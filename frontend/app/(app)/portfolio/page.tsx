@@ -11,11 +11,13 @@ import { Button } from "@/components/ui/button"
 import { PortfolioSummary } from "@/components/portfolio/portfolio-summary"
 import { PositionRow, type EnrichedPosition } from "@/components/portfolio/position-row"
 import { AddTransactionDialog } from "@/components/portfolio/add-transaction-dialog"
+import { PortfolioSwitcher } from "@/components/portfolio/portfolio-switcher"
 import { AuthGate } from "@/components/shared/auth-gate"
 import { useAllQuotes, useSymbolQuotes, type Quote } from "@/lib/hooks/use-market-data"
 import { useRealtimeQuotes } from "@/lib/hooks/use-realtime-quotes"
 import { useDovizStore } from "@/lib/stores/doviz-store"
 import { useCryptoStore } from "@/lib/stores/crypto-store"
+import { usePortfolioStore } from "@/lib/stores/portfolio-store"
 import { generateSparkline } from "@/lib/mock-data"
 import { isDovizTicker, isCryptoTicker } from "@/lib/constants"
 import { fetchPositions, migrateHoldings } from "@/lib/api/portfolio"
@@ -27,6 +29,9 @@ export default function PortfolioPage() {
   const [loadingPositions, setLoadingPositions] = useState(true)
   const [showAdd, setShowAdd] = useState(false)
   const [expandedTicker, setExpandedTicker] = useState<string | null>(null)
+
+  const { activePortfolioId, loading: loadingPortfolios, load: loadPortfolios } =
+    usePortfolioStore()
 
   const holdingTickers = useMemo(() => positions.map((p) => p.ticker), [positions])
 
@@ -87,12 +92,14 @@ export default function PortfolioPage() {
   }, [holdingTickers, stockTickers, allQuotes, specificQuotes, rt, dovizQuotes, cryptoQuotes])
 
   const fetchData = useCallback(async () => {
+    if (!activePortfolioId) return
+    setLoadingPositions(true)
     try {
-      let pos = await fetchPositions()
+      let pos = await fetchPositions(activePortfolioId)
       if (pos.length === 0) {
         const result = await migrateHoldings()
         if (result.migrated > 0) {
-          pos = await fetchPositions()
+          pos = await fetchPositions(activePortfolioId)
         }
       }
       setPositions(pos)
@@ -100,7 +107,7 @@ export default function PortfolioPage() {
     } finally {
       setLoadingPositions(false)
     }
-  }, [])
+  }, [activePortfolioId])
 
   const enrichedPositions = useMemo(() => positions.map((p): EnrichedPosition => {
     const q = quotes?.[p.ticker] || quotes?.[p.ticker.toLowerCase()] || quotes?.[p.ticker.toUpperCase()]
@@ -131,11 +138,20 @@ export default function PortfolioPage() {
   useEffect(() => {
     const loggedIn = !!localStorage.getItem("token")
     setIsLoggedIn(loggedIn)
-    if (loggedIn) fetchData()
-    else setLoadingPositions(false)
-  }, [fetchData])
+    if (loggedIn) {
+      loadPortfolios()
+    } else {
+      setLoadingPositions(false)
+    }
+  }, [loadPortfolios])
 
-  if (isLoggedIn === null || (isLoggedIn && loadingPositions)) {
+  useEffect(() => {
+    if (isLoggedIn && activePortfolioId) {
+      fetchData()
+    }
+  }, [isLoggedIn, activePortfolioId, fetchData])
+
+  if (isLoggedIn === null || (isLoggedIn && (loadingPortfolios || loadingPositions))) {
     return (
       <>
         <Header title="Portfolio" description="Track your positions and performance" />
@@ -172,21 +188,28 @@ export default function PortfolioPage() {
       <>
         <Header title="Portfolio" description="Track your positions and performance" />
         <div className="flex-1 overflow-auto">
-          <div className="mx-auto flex max-w-md flex-col items-center justify-center px-4 py-24 text-center">
-            <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-muted">
-              <IconPlus className="size-8 text-muted-foreground" />
+          <div className="mx-auto max-w-5xl p-4 sm:p-6">
+            <PortfolioSwitcher />
+            <div className="flex max-w-md flex-col items-center justify-center px-4 py-24 text-center mx-auto">
+              <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-muted">
+                <IconPlus className="size-8 text-muted-foreground" />
+              </div>
+              <h2 className="mb-2 text-xl font-semibold">Your portfolio is empty</h2>
+              <p className="mb-8 text-sm leading-relaxed text-muted-foreground">
+                Add your first transaction to start tracking performance.
+              </p>
+              <Button size="lg" onClick={() => setShowAdd(true)}>
+                <IconPlus className="size-4" />
+                Add Transaction
+              </Button>
             </div>
-            <h2 className="mb-2 text-xl font-semibold">Your portfolio is empty</h2>
-            <p className="mb-8 text-sm leading-relaxed text-muted-foreground">
-              Add your first transaction to start tracking performance.
-            </p>
-            <Button size="lg" onClick={() => setShowAdd(true)}>
-              <IconPlus className="size-4" />
-              Add Transaction
-            </Button>
           </div>
           {showAdd && (
-            <AddTransactionDialog onClose={() => setShowAdd(false)} onAdded={fetchData} />
+            <AddTransactionDialog
+              portfolioId={activePortfolioId ?? undefined}
+              onClose={() => setShowAdd(false)}
+              onAdded={fetchData}
+            />
           )}
         </div>
       </>
@@ -230,6 +253,7 @@ export default function PortfolioPage() {
       <Header title="Portfolio" description="Track your positions and performance" />
       <div className="flex-1 overflow-auto">
         <div className="mx-auto max-w-5xl space-y-6 p-4 sm:p-6">
+          <PortfolioSwitcher />
           <PortfolioSummary portfolio={portfolio} />
 
           <section>
@@ -252,6 +276,7 @@ export default function PortfolioPage() {
                     setExpandedTicker(expandedTicker === pos.ticker ? null : pos.ticker)
                   }
                   onTransactionChange={fetchData}
+                  portfolioId={activePortfolioId ?? undefined}
                 />
               ))}
             </div>
@@ -259,7 +284,11 @@ export default function PortfolioPage() {
         </div>
       </div>
       {showAdd && (
-        <AddTransactionDialog onClose={() => setShowAdd(false)} onAdded={fetchData} />
+        <AddTransactionDialog
+          portfolioId={activePortfolioId ?? undefined}
+          onClose={() => setShowAdd(false)}
+          onAdded={fetchData}
+        />
       )}
     </>
   )
