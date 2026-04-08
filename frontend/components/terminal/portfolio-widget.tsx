@@ -92,7 +92,7 @@ function PortfolioWidget({ quotes }: { quotes: Record<string, Quote> | null }) {
     )
   }
 
-  if (positionsList.length === 0) {
+  if (positionsList.filter((p) => p.total_shares > 0).length === 0) {
     return (
       <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
         No holdings yet
@@ -103,7 +103,7 @@ function PortfolioWidget({ quotes }: { quotes: Record<string, Quote> | null }) {
   const usdTryQuote = dovizQuotes["USD"] || dovizQuotes["usd"]
   const usdTryRate = usdTryQuote?.price || usdTryQuote?.ask || 0
 
-  const positions: PositionData[] = positionsList.map((h) => {
+  const positions: PositionData[] = positionsList.filter((h) => h.total_shares > 0).map((h) => {
     const isCurrency = isDovizTicker(h.ticker)
     const isTRY = h.currency === "TRY" || isCurrency
 
