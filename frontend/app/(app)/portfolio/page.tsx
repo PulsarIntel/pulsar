@@ -259,7 +259,7 @@ export default function PortfolioPage() {
           <section>
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-sm font-medium text-muted-foreground">
-                Positions ({positions.length})
+                Positions ({enrichedPositions.filter((p) => p.total_shares > 0).length})
               </h2>
               <Button size="sm" onClick={() => setShowAdd(true)}>
                 <IconPlus className="size-3.5" />
@@ -267,7 +267,7 @@ export default function PortfolioPage() {
               </Button>
             </div>
             <div className="flex flex-col gap-2">
-              {enrichedPositions.map((pos) => (
+              {enrichedPositions.filter((p) => p.total_shares > 0).map((pos) => (
                 <PositionRow
                   key={pos.id}
                   position={pos}
