@@ -249,7 +249,7 @@ function ChartCard({ symbol }: { symbol: string }) {
 
   return (
     <div className="rounded-xl border border-border bg-card">
-      <div className="h-[300px]">
+      <div className="h-[300px] overflow-hidden">
         <LightweightChart
           ticker={symbol}
           range={range}

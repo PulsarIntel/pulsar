@@ -227,7 +227,7 @@ const LightweightChart = memo(function LightweightChart({
         chart.timeScale().fitContent()
         setDataLoaded(true)
       })
-      .catch(() => { setDataLoaded(true) })
+      .catch(() => { setNoData(true); setDataLoaded(true) })
 
     const ro = new ResizeObserver(() => {
       chart.applyOptions({ width: container.clientWidth, height: container.clientHeight })
