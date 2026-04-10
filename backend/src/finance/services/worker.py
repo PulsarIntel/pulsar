@@ -127,6 +127,10 @@ async def _collect_user_symbols() -> set[str]:
             if ticker := doc.get("ticker"):
                 if ticker.lower() not in doviz_keys and "/" not in ticker:
                     symbols.add(ticker.upper())
+        async for doc in db.positions.find({}, {"ticker": 1}):
+            if ticker := doc.get("ticker"):
+                if ticker.lower() not in doviz_keys and "/" not in ticker:
+                    symbols.add(ticker.upper())
         async for doc in db.watchlists.find({}, {"tickers": 1}):
             for ticker in doc.get("tickers", []):
                 if ticker.lower() not in doviz_keys and "/" not in ticker:
