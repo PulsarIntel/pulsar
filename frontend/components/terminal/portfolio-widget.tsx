@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback, useMemo, memo } from "react"
+import { useState, useEffect, useCallback, useMemo, useRef, memo } from "react"
 
 import type { Quote } from "@/lib/hooks/use-market-data"
 import { useSymbolQuotes } from "@/lib/hooks/use-market-data"
@@ -79,6 +79,7 @@ function PortfolioWidget({ quotes }: { quotes: Record<string, Quote> | null }) {
     [positionsList],
   )
   const { data: positionQuotes } = useSymbolQuotes(stockTickers)
+  const quoteCacheRef = useRef<Record<string, { price: number; name: string; changePercent: number }>>({})
 
   if (loading) {
     return (
@@ -132,6 +133,14 @@ function PortfolioWidget({ quotes }: { quotes: Record<string, Quote> | null }) {
         price = q.price
         name = q.name
         changePercent = q.changePercent
+        quoteCacheRef.current[h.ticker] = { price, name, changePercent }
+      } else {
+        const cached = quoteCacheRef.current[h.ticker]
+        if (cached) {
+          price = cached.price
+          name = cached.name
+          changePercent = cached.changePercent
+        }
       }
     }
 
